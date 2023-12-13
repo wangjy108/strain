@@ -298,9 +298,9 @@ class main():
             csv = [cc for cc in os.listdir(pp) if cc.endswith("csv")]
             if csv:
                 df = pd.read_csv(os.path.join(pp, csv[0]))
-                df["LigandName"] = df["mol_label"].apply(lambda x: "_".join(x.split("_")[:-1]))
-                df["conformer_ID"] = df["mol_label"].apply(lambda x: x.split("_")[-1])
-                df = df.drop(columns=["mol_label"])[["LigandName", "conformer_ID", "Strain_ene(kcal/mol)"]]
+                #df["LigandName"] = df["mol_label"].apply(lambda x: "_".join(x.split("_")[:-1]))
+                #df["conformer_ID"] = df["mol_label"].apply(lambda x: x.split("_")[-1])
+                #df = df.drop(columns=["mol_label"])[["LigandName", "conformer_ID", "Strain_ene(kcal/mol)"]]
                 avail.append(df)
             else:
                 get_ligand_name = pp.split("/")[-1]
