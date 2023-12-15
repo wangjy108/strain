@@ -1,0 +1,16 @@
+[lbg_config]
+lbg_project=10533
+lbg_machine_type=
+lbg_image=registry.dp.tech/dptech/prod-1364/strain:run0.0.10
+N_in_group=4
+
+[general]
+work_dir=/data/code_POC/strain/test/TestLigand
+extra_charge=Info_charge_multiplicity.csv
+
+[strain]
+N_gen_conformer=
+rmsd_cutoff_initial_opt=0.5
+cluster_n=
+rmsd_cutoff_cluster=0.85
+n_conformer_for_sp=1
