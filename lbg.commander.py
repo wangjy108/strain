@@ -15,6 +15,7 @@ class main():
         parser = argparse.ArgumentParser(description="STRAIN")
 
         parser.add_argument("--config", help="path of config file", default=False)
+        parser.add_argument("--platform", help="local or lbg", default=False)
         parser.add_argument("--run_type", help="submit or col_result", default=False)
         args = parser.parse_args()
 
@@ -53,9 +54,14 @@ class main():
         general = config["general"]
 
         try:
-            self.main_dir = general["work_dir"]
+            self.main_dir = general["sdf_path"]
         except Exception as e:
             self.main_dir = None
+        
+        try:
+            self.input_sdf_db = general["sdf_file"]
+        except Exception as e:
+            self.input_sdf_db = None
         
         try:
             self.extra_charge = general["extra_charge"]
@@ -110,6 +116,7 @@ class main():
 
         self.root_dir = os.getcwd()
         self.run_type = args.run_type
+        self.platform = args.platform
 
 
     def setup_lbg(self, work_dir):
@@ -143,52 +150,94 @@ class main():
                 cc.write(each_line)
             cc.write("\n")
         return
+    
+    def read_sdf(self, db_name, save_path):
+        rdmol_obj_dic = {}
 
-    def submit(self):
-        if not self.main_dir:
-            logging.info("No available path to run, please define work_dir in config")
-            return 
+        with open(db_name, "r+") as f:
+            sdf_content = [ff for ff in f.readlines()]
         
-        if not os.path.exists(self.main_dir):
-            logging.info("Wrong path to run, please re-define work_dir in config")
+        end_idx = [-1] + [idx for idx, line in enumerate(sdf_content) if "$$$$" in line][:-1]
+
+        for ii, idx in enumerate(end_idx):
+            try:
+                get_mol = sdf_content[end_idx[ii]+1:end_idx[ii+1]+1]
+            except Exception as e:
+                get_mol = sdf_content[end_idx[ii]+1:]
+            
+            get_real_name = str(get_mol[0].strip())
+
+            try:
+                rdmol_obj_dic[get_real_name]
+            except Exception as e:
+                rdmol_obj_dic.setdefault(get_real_name, [])
+            
+            rdmol_obj_dic[get_real_name].append(get_mol)
+        
+        if not os.path.exists(save_path):
+            os.mkdir(save_path)
+        
+        for kk, vv in rdmol_obj_dic.items():
+            save_file = f"{os.path.join(save_path, kk)}.sdf"
+            with open(save_file, "w+") as cc:
+                for idx, each in enumerate(vv):
+                    for line in each:
+                        cc.write(line)
+                 
+        return [kk for kk in rdmol_obj_dic.keys()]
+
+    def prepare(self):
+        logging.info("Run prepare ....")
+
+        if not (self.main_dir or self.input_sdf_db):
+            logging.info("No available path/sdf to run, please define sdf_path or sdf_file")
             return
         
-        os.chdir(self.main_dir)
-
-        _all = [sdf for sdf in os.listdir("./") if ".sdf" in sdf]
+        if self.main_dir and (not os.path.exists(self.main_dir)):
+            logging.info("Wrong path to run, please re-define sdf_path")
+            return
+        
+        if self.input_sdf_db:
+            self.main_dir = os.path.join(os.getcwd(), "STRAIN")
+            _all = self.read_sdf(self.input_sdf_db, self.main_dir)
+            os.chdir(self.main_dir)
+        
+        if self.main_dir:
+            os.chdir(self.main_dir)
+            _all = [sdf for sdf in os.listdir("./") if ".sdf" in sdf]
 
         if not _all:
-            logging.info(f"Nothing to run in {self.main_dir}, terminate")
-            return
-        
-        if not self.lbg_project:
-            logging.info("Please define lbg_project in config")
+            logging.info("Nothing to do, abort")
             return 
-        
-        if not self.lbg_image:
-            logging.info("Please define lbg_image in config")
-            return 
-
-
-        cmd_py = os.path.join(self.root_dir, 'sample_pip_strain.py')
+            
+        cmd_py = os.path.join(self.root_dir, 'strain.py')
         
         if not os.path.isfile(cmd_py):
-            logging.info(f"No sample_pip_strain.py, please put it at {self.root_dir}")
+            logging.info(f"No strain.py, please put it at {self.root_dir}")
             return 
         
-        logging.info("Run submit ....")
+        if self.platform == "lbg":
+            n_group = math.ceil(len(_all) / self.N_in_group)
+        else:
+            n_group = 1
+            self.N_in_group = len(_all)
+
         
-        n_group = math.ceil(len(_all) / self.N_in_group)
+        _work_dir = [os.path.join(self.main_dir, str(i)) for i in range(n_group)]
+        
 
-        tracker = {}
+        for ii, each_dir in enumerate(_work_dir):
+            if not os.path.exists(each_dir):
+                os.mkdir(each_dir)
 
-        for i in range(n_group):
-            _work_dir = os.path.join(self.main_dir, str(i))
-            if not os.path.exists(_work_dir):
-                os.mkdir(_work_dir)
-            os.chdir(_work_dir)
-            logging.info(f"Working with subset {i}")
-            get_set = _all[i*self.N_in_group:(i+1)*self.N_in_group]
+            os.chdir(each_dir)
+            
+            cmd_cp = f"cp {cmd_py} ./"
+            (_, _) = subprocess.getstatusoutput(cmd_cp)
+
+            logging.info(f"Preparing at {each_dir}")
+
+            get_set = _all[ii*self.N_in_group:(ii+1)*self.N_in_group]
 
             _flag = 0
 
@@ -204,7 +253,7 @@ class main():
 
             for each in get_set:
                 original_file = os.path.join(self.main_dir, each)
-                target_file = os.path.join(_work_dir, each)
+                target_file = os.path.join(each_dir, each)
                 cmd = f"mv {original_file} {target_file}"
                 (_, _) = subprocess.getstatusoutput(cmd)
 
@@ -218,7 +267,7 @@ class main():
                     cmd_dic.update(self._dic)
                     cmd_dic.setdefault("--define_charge", _dic_charge[each.split(".")[0]])
                                 
-                cmd_line = f"python sample_pip_strain.py --input_sdf {each} "
+                cmd_line = f"python strain.py --input_sdf {each} "
 
                 if cmd_dic:
                     for kk, vv in cmd_dic.items():
@@ -230,17 +279,36 @@ class main():
 
                 if os.path.isfile(target_file):
                     _flag += 1
-            
-            if _flag == len(get_set):
-                #setup_lbg(projectID=projectID, _path=_work_dir)
-                self.setup_lbg(work_dir=_work_dir)
-                self.setup_local_special(work_dir=_work_dir, cmd_list=bash_cmd)
-                
-                cmd_cp = f"cp {cmd_py} ./"
-                (_, _) = subprocess.getstatusoutput(cmd_cp)
 
-                submission_cmd = "lbg job submit -i input.json -p ./ > TRACK_JOB"
-                (_, _) = subprocess.getstatusoutput(submission_cmd)
+            if _flag == len(get_set):
+                self.setup_local_special(work_dir=each_dir, cmd_list=bash_cmd)
+            
+            os.chdir(self.root_dir)
+        
+        logging.info("Finish prepare")
+
+        return _work_dir
+
+    def submit_lbg(self):
+        tracker = {}
+        if not self.lbg_project:
+            logging.info("Please define lbg_project in config")
+            return 
+        
+        if not self.lbg_image:
+            logging.info("Please define lbg_image in config")
+            return
+        
+        work_dir = self.prepare()
+
+        logging.info("Submit job(s) to bohrium ....")
+        
+        for idx, _dir in enumerate(work_dir):
+            os.chdir(_dir)
+            self.setup_lbg(work_dir=_dir)
+
+            submission_cmd = "lbg job submit -i input.json -p ./ > TRACK_JOB"
+            (_, _) = subprocess.getstatusoutput(submission_cmd)   
             
             if os.path.isfile("TRACK_JOB") and os.path.getsize("TRACK_JOB"):
                 with open("TRACK_JOB", "r+") as f:
@@ -255,13 +323,13 @@ class main():
                     JOB_ID = None
                 
                 if JOB_ID:
-                    tracker.setdefault(_work_dir, JOB_ID)
+                    tracker.setdefault(_dir, JOB_ID)
                 else:
-                    logging.info(f"Submit failed at {_work_dir}, check in folder for more information")
+                    logging.info(f"Submit failed at {_dir}, check in folder for more information")
             else:
-                logging.info(f"Submit failed at {_work_dir}, check in folder for more information")
+                logging.info(f"Submit failed at {_dir}, check in folder for more information")
 
-            os.chdir(self.main_dir)
+            os.chdir(self.root_dir)
         
         if tracker:
             df_track = pd.DataFrame({"local_path": [kk for kk in tracker.keys()],
@@ -272,8 +340,44 @@ class main():
             logging.info("Submit failed")
             return 
 
-        logging.info("Finish submit")
+        logging.info("Submit finish")
         return 
+    
+    def submit_local(self):
+
+        work_dir = self.prepare()
+
+        logging.info("Run local strain calculation ....")
+
+        tracker = {}
+        for idx, _dir in enumerate(work_dir):
+            os.chdir(_dir)
+
+            logging.info(f"Working at {_dir}")
+
+            submission_cmd = "bash run.sh"
+            (status, out) = subprocess.getstatusoutput(submission_cmd)  
+
+            tag = [line.strip().endswith("Done") for line in out.split("\n")]
+
+            if tag:
+                tracker.setdefault(_dir, "Done")
+            else:
+                tracker.setdefault(_dir, "Error")
+
+            os.chdir(self.root_dir)
+        
+        if tracker:
+            df_track = pd.DataFrame({"local_path": [kk for kk in tracker.keys()],
+                                 "Status": [vv for vv in tracker.values()]})
+        
+            df_track.to_csv(os.path.join(self.main_dir,"submission_track_list"), index=None)
+        else:
+            logging.info("local run failed")
+            return 
+
+        logging.info("Local run finish")
+        return
     
     def get_path(self, root_path_prefix):
         if not isinstance(root_path_prefix, list):
@@ -320,11 +424,17 @@ class main():
             return
         
         _df.to_csv(os.path.join(self.main_dir, "FinalStrain.csv"), index=None)
-        logging.info(f"Strain results for all calculated mols saved in [FinalStrain.csv] at {self.main_dir}")
+        logging.info("Strain results for all calculated mols saved in [FinalStrain.csv] ")
         return 
 
     def col_result(self):
-        os.chdir(self.main_dir)
+        if not self.main_dir:
+            _dir = os.path.join(self.root_dir, "STRAIN")
+            self.main_dir = _dir
+        else:
+            _dir = self.main_dir
+
+        os.chdir(_dir)
 
         if not os.path.isfile("submission_track_list"):
             logging.info("No tracking information available, abort")
@@ -340,20 +450,28 @@ class main():
 
         for idx, row in df.iterrows():
             os.chdir(row["local_path"])
-            cmd = f"lbg job download {row['JOB_ID']}"
-            (_, _) = subprocess.getstatusoutput(cmd)
-            if os.path.isdir(str(row['JOB_ID'])):
-                (_, _) = subprocess.getstatusoutput(f"mv {row['JOB_ID']}/* ./")
-                (_, _) = subprocess.getstatusoutput(f"rm -rf {row['JOB_ID']}")
-                transfer += [os.path.join(row["local_path"], dd) for dd in os.listdir(row["local_path"]) if os.path.isdir(dd)]
-                should_delete.append(row["local_path"])
-            else:
-                should_not_delet.append(row["local_path"])
             
-            os.chdir(self.main_dir)
+            if "Status" in df.columns:
+                if row["Status"] == "Done":
+                    transfer += [os.path.join(row["local_path"], dd) for dd in os.listdir(row["local_path"]) if os.path.isdir(dd)]
+                    should_delete.append(row["local_path"])
+                else:
+                    should_not_delet.append(row["local_path"])
+            else:
+                cmd = f"lbg job download {row['JOB_ID']}"
+                (_, _) = subprocess.getstatusoutput(cmd)
+                if os.path.isdir(str(row['JOB_ID'])):
+                    (_, _) = subprocess.getstatusoutput(f"mv {row['JOB_ID']}/* ./")
+                    (_, _) = subprocess.getstatusoutput(f"rm -rf {row['JOB_ID']}")
+                    transfer += [os.path.join(row["local_path"], dd) for dd in os.listdir(row["local_path"]) if os.path.isdir(dd)]
+                    should_delete.append(row["local_path"])
+                else:
+                    should_not_delet.append(row["local_path"])
+            
+            os.chdir(_dir)
         
         if transfer:
-            target = os.path.join(self.main_dir, "RUN_DONE")
+            target = os.path.join(_dir, "RUN_DONE")
             if not os.path.exists(target):
                 os.mkdir(target)
             for each in transfer:
@@ -364,17 +482,17 @@ class main():
                 shutil.rmtree(pp)
             
         if should_not_delet:
-            error = os.path.join(self.main_dir, "ERROR")
+            error = os.path.join(_dir, "ERROR")
             if not os.path.exists(error):
-                os.mkdir(os.path.join(self.main_dir, "ERROR"))
+                os.mkdir(os.path.join(_dir, "ERROR"))
             
             for _pp in should_not_delet:
                 cmd_mv2 = f"mv {_pp}/*.sdf {error}"
                 os.system(cmd_mv2)
 
         if os.path.exists("RUN_DONE"):
-            logging.info("Finish collect")
-            self.summarize(_path=os.path.join(self.main_dir, "RUN_DONE"))
+            logging.info(f"Finish collect")
+            self.summarize(_path=os.path.join(_dir, "RUN_DONE"))
             os.system("rm -f submission_track_list")
         else:
             logging.info("Nothing collected, abort")
@@ -383,13 +501,24 @@ class main():
         return
     
     def run(self):
+        _dic_platform = {"lbg": self.submit_lbg,
+                         "local": self.submit_local}
+
         if "submit" in self.run_type:
-            self.submit()
+            try:
+                _dic_platform[self.platform]
+            except Exception as e:
+                logging.info("Wrong platform option, choose from [local, lbg]")
+                return
+
+            _dic_platform[self.platform]()
+
         elif "col_result" in self.run_type:
             self.col_result()
             #os.system("rm -f submission_track_list")
         else:
             logging.info(f"Not available run type: {self.run_type}")
+            logging.info("Choose from [submit, col_result]")
         
         return
 
