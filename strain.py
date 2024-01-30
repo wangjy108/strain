@@ -104,6 +104,8 @@ class main():
             self.sp_max_n = args["n_conformer_for_sp"]
         except Exception as e:
             self.sp_max_n = 1
+        
+        self.prefix = ".".join(self.db_name.split(".")[:-1])
       
     
     def step1_initial_opt(self):
@@ -137,11 +139,11 @@ class main():
             logging.info("Failed at initial opt")
             return None
         
-        cc = Chem.SDWriter(f"{self.db_name.split('.')[0]}.initial_opt.sdf")
+        cc = Chem.SDWriter(f"{self.prefix}.initial_opt.sdf")
         cc.write(opt[0])
         cc.close()
 
-        return f"{self.db_name.split('.')[0]}.initial_opt.sdf"
+        return f"{self.prefix}.initial_opt.sdf"
     
     def step2_sampling(self, input_file_name):
         sampled_file_name = None
@@ -211,7 +213,7 @@ class main():
                 applied_basis = "6-311G*"
 
         
-        mol_initial_opt = [cc for cc in Chem.SDMolSupplier(f"{self.db_name.split('.')[0]}.initial_opt.sdf", removeHs=False) if cc]
+        mol_initial_opt = [cc for cc in Chem.SDMolSupplier(f"{self.prefix}.initial_opt.sdf", removeHs=False) if cc]
         xtb_initial_opt = float(mol_initial_opt[0].GetProp("Energy_xtb"))
 
         opted_mol = {}
@@ -258,12 +260,12 @@ class main():
             else:
                 GM = get_GM[-1][0]
                 GM_energy = abs(get_GM[-1][-1])
-            
-        cc = Chem.SDWriter(f"Stable_{self.db_name.split('.')[0]}.sdf")
+
+        cc = Chem.SDWriter(f"Stable_{self.prefix}.sdf")
         cc.write(GM[0])
         cc.close()
 
-        df = pd.DataFrame({"LigandName": [self.db_name.split('.')[0]],
+        df = pd.DataFrame({"LigandName": [self.prefix],
                             "Applied Basis": [applied_basis],
                             "Strain Energy/kcal.mol-1": [f"{GM_energy}"]})
 
@@ -277,8 +279,7 @@ class main():
         if not self.db_name:
             logging.info("check and run again")
             return
-        
-        self.prefix = ".".join(self.db_name.split(".")[:-1])
+
         work_dir = os.path.join(self.main_dir, f"{self.prefix}")
         if not os.path.exists(work_dir):
             os.mkdir(work_dir)
@@ -324,8 +325,6 @@ class main():
         os.system(f"rm -f OPT_*.sdf SAVE.sdf FILTER.sdf")
 
         os.chdir(self.main_dir)
-
-
 
 
 if __name__ == '__main__':
