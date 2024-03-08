@@ -67,11 +67,7 @@ class main():
             self.charge = args["define_charge"]
         except Exception as e:
             self.charge = None
-        else:
-            try:
-                self.charge = int(self.charge)
-            except Exception as e:
-                self.charge = None
+        
         
         try:
             self.rmsd_cutoff_initial_opt = float(args["rmsd_cutoff_initial_opt"])
@@ -111,13 +107,13 @@ class main():
     def step1_initial_opt(self):
         ## try without HeavyAtom constrain first
         opt = []
+
         if self.charge != None:
-            _initial_opt = sysopt(input_sdf=self.db_name,
-                                 charge_method="define", 
-                                 define_charge=self.charge).run()
+            _initial_opt = sysopt(input_sdf=self.db_name, 
+                                define_charge=self.charge).run()
         else:
             _initial_opt = sysopt(input_sdf=self.db_name).run()
-            self.charge = int(_initial_opt[0].GetProp("charge"))
+            self.charge = _initial_opt[0].GetProp("charge")
         
         get_aligned_search = align(SearchMolObj=_initial_opt[0], RefMolObj=self.get_mol, method="crippen3D").run()
         if get_aligned_search:
@@ -129,7 +125,6 @@ class main():
             logging.info("Shift to HA constrained optimization")
             opt = sysopt(input_sdf=self.db_name,
                             HA_constrain=True, 
-                            charge_method="define", 
                             define_charge=self.charge).run()
         else:
             logging.info("Initial opt met rmsd requirement, no constrain performed")
