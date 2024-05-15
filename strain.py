@@ -241,12 +241,12 @@ class main():
         ## decide whether carry out sp calc
 
         if self.special_type:
-                applied_basis = "6-311G*"
+                applied_basis = "6-311G**"
         else:
             if int(self.charge) < 0:
-                applied_basis = "6-31+G*"
+                applied_basis = "6-311G**"
             else:
-                applied_basis = "6-311G*"
+                applied_basis = "6-31G**"
 
         
         mol_initial_opt = [cc for cc in Chem.SDMolSupplier(f"{self.prefix}.initial_opt.sdf", removeHs=False) if cc]
