@@ -120,6 +120,12 @@ class main():
         except Exception as e:
             self.verbose = False
 
+        try:
+            self.if_double_constraint = args["double_constraint"]
+        except Exception as e:
+            self.if_double_constraint = False
+            
+
         self.prefix = ".".join(self.db_name.split(".")[:-1])
       
     
@@ -207,7 +213,7 @@ class main():
         opted = sysopt(input_sdf=input_sdf_name, 
                        rmsd_cutoff=self.distance_cutoff,
                       # save_n=self.sp_max_n,
-                       HA_constrain=False, 
+                       HA_constrain=self.if_double_constraint,
                        define_charge=self.charge,
                        if_write_sdf=False).run()
         
@@ -249,8 +255,9 @@ class main():
         pose_with_energy_label_initial_opt, _ = syssp(input_rdmol_obj=mol_initial_opt, 
                                                 charge_method="define", 
                                                 define_charge=self.charge, 
-                                                basis=applied_basis).run_pyscf()
-        
+                                                basis=applied_basis,
+                                                if_solvent=True).run_pyscf()
+
         mol_initial_opt[0].SetProp("Energy_dft", f"{pose_with_energy_label_initial_opt[0][0]}")
         starter = Chem.SDWriter(f"{self.prefix}.initial_opt.sdf")
         starter.write(mol_initial_opt[0])
@@ -266,24 +273,28 @@ class main():
             pose_with_energy_label, _ = syssp(input_rdmol_obj=[each_mol], 
                                                 charge_method="define", 
                                                 define_charge=self.charge, 
-                                                basis=applied_basis).run_pyscf()
+                                                basis=applied_basis,
+                                                if_solvent=True).run_pyscf()
 
             each_mol.SetProp("Energy_dft", f"{pose_with_energy_label[0][0]}")
-            ee_strain = (pose_with_energy_label[0][0] - pose_with_energy_label_initial_opt[0][0]) * 627.51
+            ee_strain = (pose_with_energy_label_initial_opt[0][0] - pose_with_energy_label[0][0]) * 627.51
 
             sp_dic.setdefault(ii, [each_mol, ee_strain])
         
-        get_GM = sorted(sp_dic.items(), key=lambda x: x[1][-1])[0]
+        get_GM = sorted(sp_dic.items(), key=lambda x: x[1][-1])[-1]
+
+        GM = get_GM[-1][0]
+        GM_energy = get_GM[-1][-1]
         
-        if get_GM[-1][-1] > 0:
-            GM = mol_initial_opt
-            GM_energy = "~ 1"
-        else:
-            GM = get_GM[-1][0]
-            GM_energy = abs(get_GM[-1][-1])
+        #if get_GM[-1][-1] > 0:
+        #    GM = mol_initial_opt[0]
+        #    GM_energy = "~ 1"
+        #else:
+        #    GM = get_GM[-1][0]
+        #    GM_energy = abs(get_GM[-1][-1])
 
         cc = Chem.SDWriter("Global.sdf")
-        cc.write(GM[0])
+        cc.write(GM)
         cc.close()
         logging.info("Global minima conformation has been saved in [Global.sdf]")
         
@@ -291,7 +302,7 @@ class main():
         if self.sp_max_n > 1:
             more_cc = Chem.SDWriter(f"AppendixConf_top{self.sp_max_n}.sdf")
             for each in sorted(sp_dic.items(), key=lambda x: x[1][-1]):
-                more_cc.write(each[0])
+                more_cc.write(each[-1][0])
             more_cc.close()
             logging.info(f"All conformations with DFT level energy labels were saved in [AppendixConf_top{self.sp_max_n}.sdf]")
 
@@ -302,9 +313,15 @@ class main():
             more_and_more_cc.close()
             logging.info(f"More conformations without DFT energy labels were saved in [AppendixConf_rest.sdf]")
 
+        if GM_energy < 0:
+            write_GM_energy = "< 1"
+        else:
+            write_GM_energy = GM_energy
+            
+
         df = pd.DataFrame({"LigandName": [self.prefix],
                             "Applied Basis": [applied_basis],
-                            "Strain Energy/kcal.mol-1": [f"{GM_energy}"]})
+                            "Strain Energy/kcal.mol-1": [f"{write_GM_energy}"]})
 
 
         df.to_csv("RESULT.STRAIN.csv", index=None)
@@ -390,6 +407,8 @@ if __name__ == '__main__':
                         help='define the maximum conformers involved in final dft calculation, default 1')
     parser.add_argument('--energy_cutoff', type=float, default=0.5,
                         help='energy cutoff to save pose for single point calculation, unit in kcal/mol, default 0.5')
+    parser.add_argument('--double_constraint', default=False, action='store_true',
+                        help='if perform HeavyAtom constraint for post sampling optmization, default False')
     parser.add_argument('--verbose', default=False, action='store_true',
                         help='if save more conformation for visual check after single point energy calculation, default False')
     
@@ -403,6 +422,7 @@ if __name__ == '__main__':
          rmsd_cutoff_cluster=args.rmsd_cutoff,
          n_conformer_for_sp=args.n_conformer_for_sp,
          energy_cutoff=args.energy_cutoff,
+         double_constraint=args.double_constraint,
          verbose=args.verbose).run()
 
     

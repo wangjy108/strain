@@ -81,30 +81,39 @@ class main():
         if self.N_gen_conformer:
             self._dic.setdefault("--N_gen_conformer", self.N_gen_conformer)
         
-        try:
-            self.rmsd_cufoff_initial_opt = strain["rmsd_cutoff_initial_opt"]
-        except Exception as e:
-            self.rmsd_cufoff_initial_opt = None
-
-        if self.rmsd_cufoff_initial_opt:
-            self._dic.setdefault("--rmsd_cutoff_initial_opt", self.rmsd_cufoff_initial_opt)
         
         try:
-            self.cluster_n = strain["cluster_n"]
-        except Exception as e:
-            self.cluster_n = None
-        
-        if self.cluster_n:
-            self._dic.setdefault("--cluster_n", self.cluster_n)
-        
-        try:
-            self.rmsd_cutoff_cluster = strain["rmsd_cutoff_cluster"]
+            self.rmsd_cutoff_cluster = strain["rmsd_cutoff"]
         except Exception as e:
             self.rmsd_cufoff_cluster = None
         
         if self.rmsd_cutoff_cluster:
             self._dic.setdefault("--rmsd_cutoff", self.rmsd_cutoff_cluster)
         
+        try:
+            self.energy_cutoff = strain["energy_cutoff"]
+        except Exception as e:
+            self.energy_cutoff = None
+        
+        if self.energy_cutoff:
+            self._dic.setdefault("--energy_cutoff", self.energy_cutoff)
+        
+        try:
+            self.double_constraint = strain["double_constraint"]
+        except Exception as e:
+            self.double_constraint = False
+        
+        if self.double_constraint:
+            self._dic.setdefault("--double_constraint", " ")
+        
+        try:
+            self.verbose = strain["verbose"]
+        except Exception as e:
+            self.verbose = False
+        
+        if self.verbose:
+            self._dic.setdefault("--verbose", " ")
+
         try:
             self.n_conformer_for_sp = strain["n_conformer_for_sp"]
         except Exception as e:
