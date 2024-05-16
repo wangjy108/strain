@@ -166,6 +166,7 @@ class main():
             return None
         
         cc = Chem.SDWriter(f"{self.prefix}.initial_opt.sdf")
+        ## since this one the HA constrained conformation, should be ok if extra-align doesn't perform
         cc.write(_initial_opt[0])
         cc.close()
 
@@ -282,9 +283,6 @@ class main():
             sp_dic.setdefault(ii, [each_mol, ee_strain])
         
         get_GM = sorted(sp_dic.items(), key=lambda x: x[1][-1])[-1]
-
-        GM = get_GM[-1][0]
-        GM_energy = get_GM[-1][-1]
         
         #if get_GM[-1][-1] > 0:
         #    GM = mol_initial_opt[0]
@@ -293,30 +291,38 @@ class main():
         #    GM = get_GM[-1][0]
         #    GM_energy = abs(get_GM[-1][-1])
 
-        cc = Chem.SDWriter("Global.sdf")
-        cc.write(GM)
-        cc.close()
-        logging.info("Global minima conformation has been saved in [Global.sdf]")
+        GM = get_GM[-1][0]
+        GM_energy = get_GM[-1][-1]
         
-
         if self.sp_max_n > 1:
             more_cc = Chem.SDWriter(f"AppendixConf_top{self.sp_max_n}.sdf")
             for each in sorted(sp_dic.items(), key=lambda x: x[1][-1]):
-                more_cc.write(each[-1][0])
+                aligned_each = align(SearchMolObj=each[-1][0], RefMolObj=mol_initial_opt[0], method="crippen3D").run()
+                more_cc.write(aligned_each)
             more_cc.close()
             logging.info(f"All conformations with DFT level energy labels were saved in [AppendixConf_top{self.sp_max_n}.sdf]")
 
         if self.verbose:
             more_and_more_cc = Chem.SDWriter(f"AppendixConf_rest.sdf")
             for mol in mol_set[self.sp_max_n:]:
-                more_and_more_cc.write(mol)
+                aligned_mol = align(SearchMolObj=mol, RefMolObj=mol_initial_opt[0], method="crippen3D").run() 
+                more_and_more_cc.write(aligned_mol)
             more_and_more_cc.close()
             logging.info(f"More conformations without DFT energy labels were saved in [AppendixConf_rest.sdf]")
-
+        
+        
         if GM_energy < 0:
             write_GM_energy = "< 1"
+            GM = mol_initial_opt[0]
         else:
             write_GM_energy = GM_energy
+            ## perform align
+            GM = align(SearchMolObj=GM, RefMolObj=mol_initial_opt[0], method="crippen3D").run() 
+
+        cc = Chem.SDWriter("Global.sdf")
+        cc.write(GM)
+        cc.close()
+        logging.info("Global minima conformation has been saved in [Global.sdf]")
             
 
         df = pd.DataFrame({"LigandName": [self.prefix],
