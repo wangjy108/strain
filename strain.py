@@ -288,7 +288,8 @@ class main():
         
         
         if GM_energy < 0:
-            write_GM_energy = "< 1"
+            #write_GM_energy = "< 1"
+            df_strain[0,-1] = "< 1"
             GM = mol_initial_opt[0]
         else:
             write_GM_energy = GM_energy
