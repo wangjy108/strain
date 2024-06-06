@@ -35,7 +35,7 @@ class main():
         self.main_dir = os.getcwd()
         
         ## initial
-        _dic_rotableBond = {0: 80, 1: 150} ## used to be 100, 300
+        _dic_rotableBond = {0: 200, 1: 300} ## used to be 100, 300
         #_dic_HA_index = {}
         try:
             self.get_mol = [mm for mm in Chem.SDMolSupplier(self.db_name) if mm][0]
@@ -160,7 +160,7 @@ class main():
                  define_charge=self.charge).run()
         if os.path.isfile("SAVE.sdf") and os.path.getsize("SAVE.sdf"):
             logging.info("Samping success")
-            logging.info("Sampled Conformation(s) were saved in [SAVE.sdf]")
+            #logging.info("Sampled Conformation(s) were saved in [SAVE.sdf]")
             sampled_file_name = "SAVE.sdf"
         
         else:
@@ -232,35 +232,30 @@ class main():
                                                 if_solvent=True).run_pyscf()
 
             each_mol.SetProp("Energy_dft", f"{pose_with_energy_label[0][0]}")
-            ee_strain = (pose_with_energy_label_initial_opt[0][0] - pose_with_energy_label[0][0]) * 627.51
+            _raw = (pose_with_energy_label_initial_opt[0][0] - pose_with_energy_label[0][0]) * 627.51
+            ee_strain = max(float(f"{_raw:.3f}"), 0.1)
 
-            sp_dic.setdefault(each_mol.GetProp("_Name"), [each_mol, ee_strain])
+            sp_dic.setdefault(each_mol.GetProp("_Name"), [each_mol, ee_strain, pose_with_energy_label[0][0]])
 
         df_strain = pd.DataFrame({"NameTag": [kk for kk in sp_dic.keys()],
                                   "Applied Basis": [applied_basis for i in range(self.sp_max_n)],
-                                  "EnergyDiff(Strain/kcal.mol-1)": [vv[-1] for vv in sp_dic.values()]}).sort_values(by="EnergyDiff(Strain/kcal.mol-1)", 
-                                  ascending=False)
+                                  "dft(au)": [vv[-1] for vv in sp_dic.values()],
+                                  "EnergyDiff(Strain/kcal.mol-1)": [vv[1] for vv in sp_dic.values()]}).sort_values(by="dft(au)")
         
-        df_strain.iloc[0,0] = f"{df_strain.iloc[0,0]}(Stable)"
+        GM = sorted(sp_dic.items(), key=lambda x: x[1][-1])[0][-1][0]
 
-        get_GM = sorted(sp_dic.items(), key=lambda x: x[1][-1])[-1]
-
-        GM = get_GM[-1][0]
-        GM_energy = get_GM[-1][-1]
-
-
-        """
-        if self.sp_max_n > 1:
-            more_cc = Chem.SDWriter(f"AppendixConf_top{self.sp_max_n}.sdf")
-            for each in sorted(sp_dic.items(), key=lambda x: x[1][-1]):
-                aligned_each = align(SearchMolObj=each[-1][0], RefMolObj=mol_initial_opt[0], method="crippen3D").run()
-                more_cc.write(aligned_each)
-            more_cc.close()
-            logging.info(f"All conformations with DFT level energy labels were saved in [AppendixConf_top{self.sp_max_n}.sdf]")
-        """
+        cc = Chem.SDWriter("Stable.sdf")
+        cc.write(GM)
+        cc.close()
+        logging.info("Stable conformation was saved in [Stable.sdf]")
 
         if self.verbose:
-            df_strain = pd.merge(self.df_ditribution, df_strain, on="NameTag", how="outer").fillna("-") 
+            df_strain = pd.merge(self.df_ditribution, 
+                                 df_strain, 
+                                 on="NameTag", 
+                                 how="outer").fillna(0).sort_values(by="dft(au)").replace({"dft(au)": 0, "EnergyDiff(Strain/kcal.mol-1)": 0}, "-")
+
+            #df_strain.iloc[0,0] = f"{df_strain.iloc[0,0]}(Stable)
 
             verbose_cc = Chem.SDWriter(f"OptConformer.sdf")
 
@@ -275,42 +270,9 @@ class main():
             verbose_cc.close()
 
             logging.info(f"Optimized Conformation(s) were saved in [OptConformer.sdf]")
-
-
-            """
-            more_and_more_cc = Chem.SDWriter(f"AppendixConf_rest.sdf")
-            for mol in mol_set[self.sp_max_n:]:
-                aligned_mol = align(SearchMolObj=mol, RefMolObj=mol_initial_opt[0], method="crippen3D").run() 
-                more_and_more_cc.write(aligned_mol)
-            more_and_more_cc.close()
-            logging.info(f"More conformations without DFT energy labels were saved in [AppendixConf_rest.sdf]")
-            """
         
-        
-        if GM_energy < 0:
-            #write_GM_energy = "< 1"
-            df_strain[0,-1] = "< 1"
-            GM = mol_initial_opt[0]
-        else:
-            write_GM_energy = GM_energy
-            ## perform align
-            GM = align(SearchMolObj=GM, RefMolObj=mol_initial_opt[0], method="crippen3D").run() 
-
-        cc = Chem.SDWriter("Stable.sdf")
-        cc.write(GM)
-        cc.close()
-        logging.info("Stable conformation was saved in [Stable.sdf]")
-            
-
-        #df = pd.DataFrame({"LigandName": [self.prefix],
-        #                    "Applied Basis": [applied_basis],
-        #                    "Strain Energy/kcal.mol-1": [f"{write_GM_energy}"]})
-
-
         df_strain.to_csv("RESULT.STRAIN.csv", index=None)
         logging.info("Recorded strain energy (and conformer distribution) was saved in [RESULT.STRAIN.csv]")
-
-        #os.system(f"rm -f OPT_*.sdf SAVE.sdf FILTER.sdf")
 
         return "RESULT.STRAIN.csv"
     
@@ -373,7 +335,7 @@ if __name__ == '__main__':
                         help='input sdf file, docking pose(s) for single mol')
     parser.add_argument('--N_gen_conformer', type=int, 
                         help='available for [denovo and sample] mode, define N conformers in sampling stage, \
-                        if not defined, 80 if rotable bond <=5, else 150')
+                        if not defined, 200 if rotable bond <=5, else 300')
     parser.add_argument('--define_charge', type=str, default=None,
                         help='define charge for input, use you sense that rdkit may fail to get corret bond order, default None')
     #parser.add_argument('--rmsd_cutoff_initial_opt', type=float,
