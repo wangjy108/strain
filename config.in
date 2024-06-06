@@ -5,14 +5,13 @@ lbg_image=registry.dp.tech/dptech/prod-1364/strain:run0.0.11
 N_in_group=4
 
 [general]
-sdf_path=/data/code_POC/strain/test/TestLigand
+sdf_path=/personal/code_POC/strain/TestFiled/Boltzmman/submit
 sdf_file=
-extra_charge=Info_charge_multiplicity.csv
+extra_charge=assign_charge.csv
 
 [strain]
 N_gen_conformer=
 rmsd_cutoff=0.85
-energy_cutoff=0.5
 n_conformer_for_sp=1
-double_constraint=False
-verbose=False
+double_constraint=True
+verbose=True

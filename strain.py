@@ -15,6 +15,7 @@ import sys
 import pandas as pd
 import numpy as np
 import shutil
+import math
 from util.ConfGenbyMM import ConfGen
 from util.OptbySQM import System as sysopt
 from util.SPcalc import System as syssp
@@ -67,31 +68,6 @@ class main():
             self.charge = args["define_charge"]
         except Exception as e:
             self.charge = None
-        
-
-        """
-        try:
-            self.rmsd_cutoff_initial_opt = float(args["rmsd_cutoff_initial_opt"])
-        except Exception as e:
-            self.rmsd_cutoff_initial_opt = 0.5
-        
-        """
-        
-        #print(f"gen conformer: {self.N_gen_conformer}")
-        
-        #self.HA_constrain = args["use_constrain"]
-        #self.if_csv = args["if_csv"]  
-
-        ##parameter for sample & cluster
-        """
-        try:
-            self.k = args["cluster_n"]
-        except Exception as e:
-            self.k = None
-        else:
-            if not isinstance(self.k, int):
-                self.k = None
-        """
 
         
         try:
@@ -101,14 +77,6 @@ class main():
         else:
             if not isinstance(self.distance_cutoff, float):
                 self.distance_cutoff = 0.85
-        
-        try:
-            self.energy_cutoff = args["energy_cutoff"]
-        except Exception as e:
-            self.energy_cutoff = 0.5
-        else:
-            if not isinstance(self.energy_cutoff, float):
-                self.energy_cutoff = 0.5
         
         try:
             self.sp_max_n = int(args["n_conformer_for_sp"])
@@ -127,6 +95,37 @@ class main():
             
 
         self.prefix = ".".join(self.db_name.split(".")[:-1])
+    
+    def Boltzmann_dist(self, mol_set):
+
+        _dic = {}
+
+        K = 298.15
+        C = 0.0019872
+        
+        for idx, mm in enumerate(mol_set):
+            _name = mm.GetProp("_Name")
+            _enenrgy = float(mm.GetProp("Energy_xtb"))
+
+            _dic.setdefault(_name, [_enenrgy, mm])
+        
+        df = pd.DataFrame({"NameTag": [kk for kk in _dic.keys()],
+                        "_Raw:Energy": [vv[0] for vv in _dic.values()]})
+        
+        df["deltaG/kcal.mol-1"] = df["_Raw:Energy"].apply(lambda x: (x - df["_Raw:Energy"].min()) * 627.51)
+
+        df["Qi"] = df["deltaG/kcal.mol-1"].apply(lambda x: math.e ** (-x/(K * C)))
+
+        df["Conf.Pi(%)"] = df["Qi"].apply(lambda x: f'{x/df["Qi"].sum()*100:.2f}')
+
+        df = df[["NameTag", "Conf.Pi(%)"]]
+
+        df = df[df["Conf.Pi(%)"] != "0.00"]
+
+        saved = sorted([_dic[_tag] for _tag in df["NameTag"].to_list()], key=lambda x: x[0])
+        
+
+        return [cc[-1] for idx, cc in enumerate(saved)], df
       
     
     def step1_initial_opt(self):
@@ -141,24 +140,6 @@ class main():
             _initial_opt = sysopt(input_sdf=self.db_name,
                                   HA_constrain=True).run()
             self.charge = _initial_opt[0].GetProp("charge")
-        
-        """
-        get_aligned_search = align(SearchMolObj=_initial_opt[0], RefMolObj=self.get_mol, method="crippen3D").run()
-        if get_aligned_search:
-            get_rmsd = RMSD(rdmolobj_mol=_initial_opt[0], rdmolobj_ref=self.get_mol, method="selfWhole").run()
-        else:
-            get_rmsd = None
-            
-        if get_rmsd > self.rmsd_cutoff_initial_opt:
-            logging.info("Shift to HA constrained optimization")
-            opt = sysopt(input_sdf=self.db_name,
-                            HA_constrain=True, 
-                            define_charge=self.charge).run()
-
-        else:
-            logging.info("Initial opt met rmsd requirement, no constrain performed")
-            opt = _initial_opt
-        """
         
         #if not opt:
         if not _initial_opt:
@@ -179,6 +160,7 @@ class main():
                  define_charge=self.charge).run()
         if os.path.isfile("SAVE.sdf") and os.path.getsize("SAVE.sdf"):
             logging.info("Samping success")
+            logging.info("Sampled Conformation(s) were saved in [SAVE.sdf]")
             sampled_file_name = "SAVE.sdf"
         
         else:
@@ -186,26 +168,6 @@ class main():
 
         return sampled_file_name
     
-    """
-    def step3_cluster(self, input_sdf_name):
-
-        #filtered_mol = cluster(input_sdf=input_sdf_name,
-        #        cluster_n=self.k,
-        #        rmsd_cutoff_cluster=self.distance_cutoff,
-        #        if_write_cluster_mol=False).run()
-        
-        #filtered_file_name = [cc for cc in os.listdir() if ("FILTER_" in cc) and (cc.endswith(".sdf"))]
-        if not filtered_mol:
-            logging.info("Failed at cluster")
-            return None
-        
-        cc = Chem.SDWriter("FILTER.sdf")
-        for each in filtered_mol:
-            cc.write(each)
-        cc.close()
-
-        return "FILTER.sdf"
-    """
     
     def step3_opt(self, input_sdf_name):
 
@@ -224,18 +186,10 @@ class main():
 
         sorted_opt = sorted(opted, key=lambda x: float(x.GetProp("Energy_xtb")))
         i = 1
-        saved = sorted_opt[:1]
+        #saved = sorted_opt[:1]
 
-        while i < len(sorted_opt):
+        saved, self.df_ditribution = self.Boltzmann_dist(sorted_opt)
 
-            energy_diff = [abs(float(saved[ii].GetProp("Energy_xtb"))- float(sorted_opt[i].GetProp("Energy_xtb"))) * 627.51
-                            for ii in range(len(saved))]
-
-            if min(energy_diff) > self.energy_cutoff:
-                saved.append(sorted_opt[i])
-
-            i += 1
-        
         return saved
     
     def step4_sp(self, mol_set):
@@ -280,20 +234,22 @@ class main():
             each_mol.SetProp("Energy_dft", f"{pose_with_energy_label[0][0]}")
             ee_strain = (pose_with_energy_label_initial_opt[0][0] - pose_with_energy_label[0][0]) * 627.51
 
-            sp_dic.setdefault(ii, [each_mol, ee_strain])
+            sp_dic.setdefault(each_mol.GetProp("_Name"), [each_mol, ee_strain])
+
+        df_strain = pd.DataFrame({"NameTag": [kk for kk in sp_dic.keys()],
+                                  "Applied Basis": [applied_basis for i in range(self.sp_max_n)],
+                                  "EnergyDiff(Strain/kcal.mol-1)": [vv[-1] for vv in sp_dic.values()]}).sort_values(by="EnergyDiff(Strain/kcal.mol-1)", 
+                                  ascending=False)
         
+        df_strain.iloc[0,0] = f"{df_strain.iloc[0,0]}(Stable)"
+
         get_GM = sorted(sp_dic.items(), key=lambda x: x[1][-1])[-1]
-        
-        #if get_GM[-1][-1] > 0:
-        #    GM = mol_initial_opt[0]
-        #    GM_energy = "~ 1"
-        #else:
-        #    GM = get_GM[-1][0]
-        #    GM_energy = abs(get_GM[-1][-1])
 
         GM = get_GM[-1][0]
         GM_energy = get_GM[-1][-1]
-        
+
+
+        """
         if self.sp_max_n > 1:
             more_cc = Chem.SDWriter(f"AppendixConf_top{self.sp_max_n}.sdf")
             for each in sorted(sp_dic.items(), key=lambda x: x[1][-1]):
@@ -301,14 +257,34 @@ class main():
                 more_cc.write(aligned_each)
             more_cc.close()
             logging.info(f"All conformations with DFT level energy labels were saved in [AppendixConf_top{self.sp_max_n}.sdf]")
+        """
 
         if self.verbose:
+            df_strain = pd.merge(self.df_ditribution, df_strain, on="NameTag", how="outer").fillna("-") 
+
+            verbose_cc = Chem.SDWriter(f"OptConformer.sdf")
+
+            for each in sorted(sp_dic.items(), key=lambda x: x[1][-1]):
+                aligned_each = align(SearchMolObj=each[-1][0], RefMolObj=mol_initial_opt[0], method="crippen3D").run()
+                verbose_cc.write(aligned_each)
+            
+            for other in mol_set[self.sp_max_n:]:
+                aligned_other = align(SearchMolObj=other, RefMolObj=mol_initial_opt[0], method="crippen3D").run()
+                verbose_cc.write(aligned_other)
+            
+            verbose_cc.close()
+
+            logging.info(f"Optimized Conformation(s) were saved in [OptConformer.sdf]")
+
+
+            """
             more_and_more_cc = Chem.SDWriter(f"AppendixConf_rest.sdf")
             for mol in mol_set[self.sp_max_n:]:
                 aligned_mol = align(SearchMolObj=mol, RefMolObj=mol_initial_opt[0], method="crippen3D").run() 
                 more_and_more_cc.write(aligned_mol)
             more_and_more_cc.close()
             logging.info(f"More conformations without DFT energy labels were saved in [AppendixConf_rest.sdf]")
+            """
         
         
         if GM_energy < 0:
@@ -319,19 +295,19 @@ class main():
             ## perform align
             GM = align(SearchMolObj=GM, RefMolObj=mol_initial_opt[0], method="crippen3D").run() 
 
-        cc = Chem.SDWriter("Global.sdf")
+        cc = Chem.SDWriter("Stable.sdf")
         cc.write(GM)
         cc.close()
-        logging.info("Global minima conformation has been saved in [Global.sdf]")
+        logging.info("Stable conformation was saved in [Stable.sdf]")
             
 
-        df = pd.DataFrame({"LigandName": [self.prefix],
-                            "Applied Basis": [applied_basis],
-                            "Strain Energy/kcal.mol-1": [f"{write_GM_energy}"]})
+        #df = pd.DataFrame({"LigandName": [self.prefix],
+        #                    "Applied Basis": [applied_basis],
+        #                    "Strain Energy/kcal.mol-1": [f"{write_GM_energy}"]})
 
 
-        df.to_csv("RESULT.STRAIN.csv", index=None)
-        logging.info("Recorded strain energy saved in [RESULT.STRAIN.csv]")
+        df_strain.to_csv("RESULT.STRAIN.csv", index=None)
+        logging.info("Recorded strain energy (and conformer distribution) was saved in [RESULT.STRAIN.csv]")
 
         #os.system(f"rm -f OPT_*.sdf SAVE.sdf FILTER.sdf")
 
@@ -383,8 +359,6 @@ class main():
             logging.info("Finish strain calculation")
         
         logging.info("Done")
-        
-        os.system(f"rm -f OPT_*.sdf SAVE.sdf FILTER.sdf")
 
         os.chdir(self.main_dir)
 
@@ -411,8 +385,8 @@ if __name__ == '__main__':
                         help='rmsd cutoff for reduce redundancy, default 0.85')
     parser.add_argument('--n_conformer_for_sp', type=int, default=1,
                         help='define the maximum conformers involved in final dft calculation, default 1')
-    parser.add_argument('--energy_cutoff', type=float, default=0.5,
-                        help='energy cutoff to save pose for single point calculation, unit in kcal/mol, default 0.5')
+    #parser.add_argument('--energy_cutoff', type=float, default=0.5,
+    #                    help='energy cutoff to save pose for single point calculation, unit in kcal/mol, default 0.5')
     parser.add_argument('--double_constraint', default=False, action='store_true',
                         help='if perform HeavyAtom constraint for post sampling optmization, default False')
     parser.add_argument('--verbose', default=False, action='store_true',
@@ -427,7 +401,6 @@ if __name__ == '__main__':
          define_charge=args.define_charge, 
          rmsd_cutoff_cluster=args.rmsd_cutoff,
          n_conformer_for_sp=args.n_conformer_for_sp,
-         energy_cutoff=args.energy_cutoff,
          double_constraint=args.double_constraint,
          verbose=args.verbose).run()
 

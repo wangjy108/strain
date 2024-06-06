@@ -90,13 +90,13 @@ class main():
         if self.rmsd_cutoff_cluster:
             self._dic.setdefault("--rmsd_cutoff", self.rmsd_cutoff_cluster)
         
-        try:
-            self.energy_cutoff = strain["energy_cutoff"]
-        except Exception as e:
-            self.energy_cutoff = None
+        #try:
+        #    self.energy_cutoff = strain["energy_cutoff"]
+        #except Exception as e:
+        #    self.energy_cutoff = None
         
-        if self.energy_cutoff:
-            self._dic.setdefault("--energy_cutoff", self.energy_cutoff)
+        #if self.energy_cutoff:
+        #    self._dic.setdefault("--energy_cutoff", self.energy_cutoff)
         
         try:
             self.double_constraint = strain["double_constraint"]
