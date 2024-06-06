@@ -409,18 +409,23 @@ class main():
         for pp in all_path:
             #work_dir = os.path.join(_path, pp)
             csv = [cc for cc in os.listdir(pp) if cc.endswith("csv")]
+            get_ligand_name = pp.split("/")[-1]
             if csv:
-                df = pd.read_csv(os.path.join(pp, csv[0]))
+                df.iloc[0,0] = get_ligand_name
+                df = pd.read_csv(os.path.join(pp, csv[0])).iloc[:1, :]
                 #df["LigandName"] = df["mol_label"].apply(lambda x: "_".join(x.split("_")[:-1]))
                 #df["conformer_ID"] = df["mol_label"].apply(lambda x: x.split("_")[-1])
                 #df = df.drop(columns=["mol_label"])[["LigandName", "conformer_ID", "Strain_ene(kcal/mol)"]]
                 avail.append(df)
             else:
-                get_ligand_name = pp.split("/")[-1]
                 nonavail.append(get_ligand_name)
         
         if avail:
             _df_all = pd.concat(avail)
+            _df_all = _df_all.drop(columns="dft(au)")
+            if "Conf.Pi(%)" in _df_all.columns:
+                _df_all = _df_all.drop(columns="Conf.Pi(%)")
+                
             if nonavail:
                 _df_append = pd.DataFrame(columns=_df_all.columns, index=[ii for ii in range(len(nonavail))])
                 _df_append["LigandName"] = nonavail

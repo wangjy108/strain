@@ -199,7 +199,7 @@ class main():
                 applied_basis = "6-311G**"
         else:
             if int(self.charge) < 0:
-                applied_basis = "6-311G**"
+                applied_basis = "6-31+G*"
             else:
                 applied_basis = "6-31G**"
 
