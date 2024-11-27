@@ -1,13 +1,13 @@
 [lbg_config]
 lbg_project=10533
 lbg_machine_type=
-lbg_image=registry.dp.tech/dptech/prod-1364/strain:run0.0.11
+lbg_image=registry.dp.tech/dptech/prod-1364/strain:run0.0.12
 N_in_group=4
 
 [general]
 sdf_path=/personal/code_POC/strain/TestFiled/Boltzmman/submit
 sdf_file=
-extra_charge=assign_charge.csv
+extra_charge=
 
 [strain]
 N_gen_conformer=
